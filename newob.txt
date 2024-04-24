@@ -1,0 +1,2 @@
+break *0x4015d9
+You can Russia from land here in Alaska.

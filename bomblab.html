@@ -1,0 +1,1215 @@
+﻿<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>bomblab</title>
+  <link rel="stylesheet" href="https://stackedit.io/style.css" />
+</head>
+
+<body class="stackedit">
+  <div class="stackedit__html"><h1 id="bomblab实验报告">bomblab实验报告</h1>
+<h2 id="刘金成-2023302111097">刘金成 2023302111097</h2>
+<h2 id="phase-0">phase 0</h2>
+<p>这个是我自己加的一些小tips和前置知识</p>
+<ol>
+<li>
+<p><strong>记得每次run之前都要给炸弹打断点 ！！！</strong></p>
+</li>
+<li>
+<p>一些常用的gdb调试命令：</p>
+</li>
+</ol>
+<pre><code>gdb bomb
+获取帮助
+help
+设置断点(可以在函数也可以在某个地址)
+break explode_bomb
+break phase_1
+break *0x4015d9
+在断点停下后继续执行(continue)注意不要在炸弹断点用
+c
+开始运行
+run
+检查汇编 会给出对应的代码的汇编
+disas 
+打印指定寄存器
+print $rsp
+每步执行
+stepi
+检查寄存器或某个地址,打印指定位数(中间时是指定参数，可以是单位或者格式)
+x/32xb $rsp
+</code></pre>
+<ol start="3">
+<li>在过了几个phase之后可以把答案存在文件里用gdb的设置参数功能省去每次输入的麻烦:</li>
+</ol>
+<pre><code>(gdb) set args ans.txt
+</code></pre>
+<ol start="4">
+<li>在编辑3的答案文档时会用到vim的一些基本操作，如三种模式的切换，如何复制粘贴保存等等，google解决</li>
+<li>常用 <code>sscanf</code> 来读取字符串，第二个参数（即<code>%esi</code>中的）是格式化字符串，可以通过打印它确认key的格式</li>
+<li>每个人的bomb都不一样，本文档仅供参考，照抄会"炸"得很惨</li>
+</ol>
+<h2 id="phase-1">phase 1</h2>
+<h3 id="汇编代码：">汇编代码：</h3>
+<p>用objdump得到整个bomb的汇编代码</p>
+<p>找到phase_1</p>
+<pre><code>0000000000400ef0 &lt;phase_1&gt;:
+  400ef0:       48 83 ec 08             sub    $0x8,%rsp
+  400ef4:       be 30 25 40 00          mov    $0x402530,%esi
+  400ef9:       e8 30 04 00 00          callq  40132e &lt;strings_not_equal&gt;
+  400efe:       85 c0                   test   %eax,%eax
+  400f00:       74 05                   je     400f07 &lt;phase_1+0x17&gt;
+  400f02:       e8 d2 06 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  400f07:       48 83 c4 08             add    $0x8,%rsp
+  400f0b:       c3                      retq
+</code></pre>
+<h3 id="思路：">思路：</h3>
+<pre><code>0000000000400ef0 &lt;phase_1&gt;:
+  400ef0:       48 83 ec 08             sub    $0x8,%rsp
+  400ef4:       be 30 25 40 00          mov    $0x402530,%esi
+  400ef9:       e8 30 04 00 00          callq  40132e &lt;strings_not_equal&gt;
+</code></pre>
+<p>注意到 <code>0x400ef4</code> 处的<code>mov</code>指令将 <code>0x402530</code>的值转移到<code>%esi</code>中，作为第二个参数传入函数 <code>strings_not_equal</code>（位于<code>40132e</code>）</p>
+<p>查看该函数的汇编代码可知是比较传入的字符串是否不相等并返回结果到<code>%eax</code>中，再test %eax 是否为0，若ZF为零则执行<code>je</code>跳过炸弹（两字符串相等），不为零则爆炸，炸弹在<code>4015d9</code></p>
+<p>由此推测需要输入的key即在<code>0x402530</code>处，下面使用gdb进行调试:</p>
+<pre><code>(gdb) break *0x4015d9
+Breakpoint 1 at 0x4015d9
+(gdb) break phase_1
+Breakpoint 2 at 0x400ef0
+</code></pre>
+<p>先给炸弹和phase_1处打断点</p>
+<pre><code>(gdb) run
+Starting program: /headless/Desktop/bomb2023302111097/bomb 
+Welcome to my fiendish little bomb. You have 6 phases with
+which to blow yourself up. Have a nice day!
+a
+
+Breakpoint 2, 0x0000000000400ef0 in phase_1 ()
+</code></pre>
+<p>随便输入什么在炸弹前停下，此时已经运行了函数 <code>strings_not_equal</code>，查看<code>0x402530</code>处有什么</p>
+<pre><code>(gdb) print (char*)0x402530
+$1 = 0x402530 "You can Russia from land here in Alaska."
+</code></pre>
+<p>可知key为 <code>You can Russia from land here in Alaska.</code></p>
+<h3 id="思考：">思考：</h3>
+<p>比较简单<br>
+要运行经过函数 <code>strings_not_equal</code>目标字符串才被加载，才能尝试print目标字符串</p>
+<h2 id="phase-2">phase 2</h2>
+<h3 id="汇编代码：-1">汇编代码：</h3>
+<pre><code>0000000000400f0c &lt;phase_2&gt;:
+  400f0c:       55                      push   %rbp
+  400f0d:       53                      push   %rbx
+  400f0e:       48 83 ec 28             sub    $0x28,%rsp
+  400f12:       48 89 e6                mov    %rsp,%rsi
+  400f15:       e8 f5 06 00 00          callq  40160f &lt;read_six_numbers&gt;
+  400f1a:       83 3c 24 00             cmpl   $0x0,(%rsp)
+  400f1e:       75 07                   jne    400f27 &lt;phase_2+0x1b&gt;
+  400f20:       83 7c 24 04 01          cmpl   $0x1,0x4(%rsp)
+  400f25:       74 21                   je     400f48 &lt;phase_2+0x3c&gt;
+  400f27:       e8 ad 06 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  400f2c:       eb 1a                   jmp    400f48 &lt;phase_2+0x3c&gt;
+  400f2e:       8b 43 f8                mov    -0x8(%rbx),%eax
+  400f31:       03 43 fc                add    -0x4(%rbx),%eax
+  400f34:       39 03                   cmp    %eax,(%rbx)
+  400f36:       74 05                   je     400f3d &lt;phase_2+0x31&gt;
+  400f38:       e8 9c 06 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  400f3d:       48 83 c3 04             add    $0x4,%rbx
+  400f41:       48 39 eb                cmp    %rbp,%rbx
+  400f44:       75 e8                   jne    400f2e &lt;phase_2+0x22&gt;
+  400f46:       eb 0c                   jmp    400f54 &lt;phase_2+0x48&gt;
+  400f48:       48 8d 5c 24 08          lea    0x8(%rsp),%rbx
+  400f4d:       48 8d 6c 24 18          lea    0x18(%rsp),%rbp
+  400f52:       eb da                   jmp    400f2e &lt;phase_2+0x22&gt;
+  400f54:       48 83 c4 28             add    $0x28,%rsp
+  400f58:       5b                      pop    %rbx
+  400f59:       5d                      pop    %rbp
+  400f5a:       c3                      retq
+</code></pre>
+<h3 id="思路：-1">思路：</h3>
+<p>先看开头</p>
+<pre><code>  400f0e:       48 83 ec 28             sub    $0x28,%rsp     
+  400f12:       48 89 e6                mov    %rsp,%rsi      
+  400f15:       e8 f5 06 00 00          callq  40160f &lt;read_six_numbers&gt;   
+</code></pre>
+<p>先分配了40 字节的栈空间，栈指针赋值给 %rsi 寄存器，然后调用 <code>read_six_numbers</code>函数（在<code>40160f</code>），phase2的key应该是六个数</p>
+<p>再看看函数<code>read_six_numbers</code>的汇编似乎就是读六个数然后存到栈上，用gdb确认一下，在<code>read_six_numbers</code>的return打一个断点（<code>400f5a</code>）</p>
+<pre><code>Phase 1 defused. How about the next one?
+1 2 3 4 5 6
+
+Breakpoint 2, 0x0000000000401650 in read_six_numbers ()
+(gdb) x /32xb $rsp
+0x7fffffffe738:	0x1a	0x0f	0x40	0x00	0x00	0x00	0x00	0x00
+0x7fffffffe740:	0x01	0x00	0x00	0x00	0x02	0x00	0x00	0x00
+0x7fffffffe748:	0x03	0x00	0x00	0x00	0x04	0x00	0x00	0x00
+0x7fffffffe750:	0x05	0x00	0x00	0x00	0x06	0x00	0x00	0x00
+(gdb) 
+</code></pre>
+<p>看到按顺序存了 1 2 3 4 5 6，说明猜想没错，再看下面的</p>
+<pre><code>  400f1a:       83 3c 24 00             cmpl   $0x0,(%rsp)  ; 比较栈顶元素和0是否相等
+  400f1e:       75 07                   jne    400f27 &lt;phase_2+0x1b&gt;   不相等爆炸
+  400f20:       83 7c 24 04 01          cmpl   $0x1,0x4(%rsp)   比较第二个数和1是否相等
+  400f25:       74 21                   je     400f48 &lt;phase_2+0x3c&gt;   相等跳转到 400f48
+</code></pre>
+<p>栈的组织结构如图，<code>%rsp</code>是栈顶指针，<code>0x4(%rsp)</code>把第一个数加上4移到下一个数，可见第一个数是0，第二个数是1</p>
+<pre><code>//low address
+%rsp+0    0
+%rsp+4    1
+%rsp+8    ?
+%rsp+12   ?
+%rsp+16   ?
+%rsp+20   ?
+//high address
+</code></pre>
+<p>跳到 <code>loop_start</code>以后</p>
+<pre><code>  400f48:       48 8d 5c 24 08          lea    0x8(%rsp),%rbx   %rbx第三个数
+  400f4d:       48 8d 6c 24 18          lea    0x18(%rsp),%rbp   %rbp栈帧结尾
+  400f52:       eb da                   jmp    400f2e &lt;phase_2+0x22&gt;   跳到loop_start
+</code></pre>
+<pre><code>loop_start:
+  400f2e:       8b 43 f8                mov    -0x8(%rbx),%eax   将当前元素的前面第二个数移入 %eax
+  400f31:       03 43 fc                add    -0x4(%rbx),%eax   将当前元素的前一个数和前第二个数相加
+  400f34:       39 03                   cmp    %eax,(%rbx)       比较eax和当前元素(rbx)是否相等
+  400f36:       74 05                   je     400f3d &lt;phase_2+0x31&gt;   如果相等，跳到400f3d//不炸
+  400f38:       e8 9c 06 00 00          callq  4015d9 &lt;explode_bomb&gt;   
+  400f3d:       48 83 c3 04             add    $0x4,%rbx        移动到下一个元素
+  400f41:       48 39 eb                cmp    %rbp,%rbx        结束？
+  400f44:       75 e8                   jne    400f2e &lt;phase_2+0x22&gt;   不相等400f2e//circle
+  400f46:       eb 0c                   jmp    400f54 &lt;phase_2+0x48&gt;   400f54//accept
+</code></pre>
+<p>可见<code>%rbx</code>是一个游标，一开始在第三个元素也就是<code>%rsp+8</code>处，比较前两个元素相加的值（存在<code>%eax</code>里）和游标处的值是否相等，如果相等就把游标往后移一个元素，判断要不要结束再重复上面的步骤，所以可以得到递推：<code>D[n]=D[n-1]+D[n-2]</code> ，故key为 0 1 1 2 3 5 这六个数</p>
+<p>用gdb尝试一下，在释放栈前打断点（<code>400f54</code>，breakpoint 2)，输入推出的key</p>
+<pre><code>Phase 1 defused. How about the next one?
+0 1 1 2 3 5
+
+Breakpoint 2, 0x0000000000400f54 in phase_2 ()
+(gdb) x /32xb $rsp
+0x7fffffffe740:	0x00	0x00	0x00	0x00	0x01	0x00	0x00	0x00
+0x7fffffffe748:	0x01	0x00	0x00	0x00	0x02	0x00	0x00	0x00
+0x7fffffffe750:	0x03	0x00	0x00	0x00	0x05	0x00	0x00	0x00
+0x7fffffffe758:	0xb1	0x14	0x40	0x00	0x00	0x00	0x00	0x00
+(gdb) x /8xb $rbx
+0x7fffffffe758:	0xb1	0x14	0x40	0x00	0x00	0x00	0x00	0x00
+</code></pre>
+<p>可见游标已经移动到了栈尾说明前面的数匹配上了（其实能在breakpoint 2停下而不是在炸弹前停下已经说明匹配正确了），phase2通过</p>
+<h3 id="思考：-1">思考：</h3>
+<p>了解了栈和栈指针，思考这六个数的储存结构<br>
+使用gdb打印寄存器中的值和寄存器作为指针后面一些位置的值<br>
+有一点疑惑是为什么判停是和 rsp+18比较而不是+20</p>
+<h2 id="phase-3">phase 3</h2>
+<h3 id="汇编代码：-2">汇编代码：</h3>
+<pre><code>0000000000400f5b &lt;phase_3&gt;:
+  400f5b:       48 83 ec 18             sub    $0x18,%rsp
+  400f5f:       48 8d 4c 24 08          lea    0x8(%rsp),%rcx
+  400f64:       48 8d 54 24 0c          lea    0xc(%rsp),%rdx
+  400f69:       be 01 28 40 00          mov    $0x402801,%esi
+  400f6e:       b8 00 00 00 00          mov    $0x0,%eax
+  400f73:       e8 b8 fc ff ff          callq  400c30 &lt;__isoc99_sscanf@plt&gt;
+  400f78:       83 f8 01                cmp    $0x1,%eax
+  400f7b:       7f 05                   jg     400f82 &lt;phase_3+0x27&gt;
+  400f7d:       e8 57 06 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  400f82:       83 7c 24 0c 07          cmpl   $0x7,0xc(%rsp)
+  400f87:       77 66                   ja     400fef &lt;phase_3+0x94&gt;
+  400f89:       8b 44 24 0c             mov    0xc(%rsp),%eax
+  400f8d:       ff 24 c5 90 25 40 00    jmpq   *0x402590(,%rax,8)
+  400f94:       b8 00 00 00 00          mov    $0x0,%eax
+  400f99:       eb 05                   jmp    400fa0 &lt;phase_3+0x45&gt;
+  400f9b:       b8 e8 02 00 00          mov    $0x2e8,%eax
+  400fa0:       2d 7a 01 00 00          sub    $0x17a,%eax
+  400fa5:       eb 05                   jmp    400fac &lt;phase_3+0x51&gt;
+  400fa7:       b8 00 00 00 00          mov    $0x0,%eax
+  400fac:       05 46 02 00 00          add    $0x246,%eax
+  400fb1:       eb 05                   jmp    400fb8 &lt;phase_3+0x5d&gt;
+  400fb3:       b8 00 00 00 00          mov    $0x0,%eax
+  400fb8:       2d b9 02 00 00          sub    $0x2b9,%eax
+  400fbd:       eb 05                   jmp    400fc4 &lt;phase_3+0x69&gt;
+  400fbf:       b8 00 00 00 00          mov    $0x0,%eax
+  400fc4:       05 b9 02 00 00          add    $0x2b9,%eax
+  400fc9:       eb 05                   jmp    400fd0 &lt;phase_3+0x75&gt;
+  400fcb:       b8 00 00 00 00          mov    $0x0,%eax
+  400fd0:       2d b9 02 00 00          sub    $0x2b9,%eax
+  400fd5:       eb 05                   jmp    400fdc &lt;phase_3+0x81&gt;
+  400fd7:       b8 00 00 00 00          mov    $0x0,%eax
+  400fdc:       05 b9 02 00 00          add    $0x2b9,%eax
+  400fe1:       eb 05                   jmp    400fe8 &lt;phase_3+0x8d&gt;
+  400fe3:       b8 00 00 00 00          mov    $0x0,%eax
+  400fe8:       2d b9 02 00 00          sub    $0x2b9,%eax
+  400fed:       eb 0a                   jmp    400ff9 &lt;phase_3+0x9e&gt;
+  400fef:       e8 e5 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  400ff4:       b8 00 00 00 00          mov    $0x0,%eax
+  400ff9:       83 7c 24 0c 05          cmpl   $0x5,0xc(%rsp)
+  400ffe:       7f 06                   jg     401006 &lt;phase_3+0xab&gt;
+  401000:       3b 44 24 08             cmp    0x8(%rsp),%eax
+  401004:       74 05                   je     40100b &lt;phase_3+0xb0&gt;
+  401006:       e8 ce 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  40100b:       48 83 c4 18             add    $0x18,%rsp
+  40100f:       c3                      retq
+
+</code></pre>
+<h3 id="思路：-2">思路：</h3>
+<p>先看要读什么数据</p>
+<pre><code> 400f69:       be 01 28 40 00          mov    $0x402801,%esi
+ 400f6e:       b8 00 00 00 00          mov    $0x0,%eax
+ 400f73:       e8 b8 fc ff ff          callq  400c30 &lt;__isoc99_sscanf@plt&gt; 
+ 400f78:       83 f8 01                cmp    $0x1,%eax              sscanf的返回值是否大于1
+ 400f7b:       7f 05                   jg     400f82 &lt;phase_3+0x27&gt;  大于1跳0x400f82
+ 400f7d:       e8 57 06 00 00          callq  4015d9 &lt;explode_bomb&gt;  boom
+</code></pre>
+<p>可见这个phase需要读入超过一个数放在栈中<br>
+看看读入格式</p>
+<pre><code>(gdb) x /s 0x402801
+0x402801:	"%d %d"
+</code></pre>
+<p>所以读两个数，分别为<code>0xc(%rsp)</code> 和<code>0x8(%rsp)</code></p>
+<pre><code> 400f82:       83 7c 24 0c 07          cmpl   $0x7,0xc(%rsp)       
+ 400f87:       77 66                   ja     400fef &lt;phase_3+0x94&gt;  第一个数大于7boom
+ 400f89:       8b 44 24 0c             mov    0xc(%rsp),%eax        
+ 400f8d:       ff 24 c5 90 25 40 00    jmpq   *0x402590(,%rax,8)    
+</code></pre>
+<p><code>400f8d</code>处是一条跳转指令，有跳转表，应该是switch函数，根据输入的第一个数跳转而且第一个数不能大于7<br>
+跳转表位于 <code>0x402590</code>处，用gdb打印出来是</p>
+<pre><code>Breakpoint 1, 0x00000000004015d9 in explode_bomb ()
+(gdb) x/8a 0x402590
+0x402590:	0x400f9b &lt;phase_3+64&gt;	0x400f94 &lt;phase_3+57&gt;
+0x4025a0:	0x400fa7 &lt;phase_3+76&gt;	0x400fb3 &lt;phase_3+88&gt;
+0x4025b0:	0x400fbf &lt;phase_3+100&gt;	0x400fcb &lt;phase_3+112&gt;
+0x4025c0:	0x400fd7 &lt;phase_3+124&gt;	0x400fe3 &lt;phase_3+136&gt;
+</code></pre>
+<p>分别对应第一个数从0到7的八种情况，继续翻译下面的case语句：</p>
+<pre><code>400f94:    b8 00 00 00 00          mov    $0x0,%eax              eax=0
+400f99:    eb 05                   jmp    400fa0 &lt;phase_3+0x45&gt;    跳0x400fa0
+
+400f9b:    b8 e8 02 00 00          mov    $0x2e8,%eax          eax=0x2e8
+400fa0:    2d 7a 01 00 00          sub    $0x17a,%eax           eax-0x17a
+400fa5:    eb 05                   jmp    400fac &lt;phase_3+0x51&gt;  跳0x400fac
+
+400fa7:    b8 00 00 00 00          mov    $0x0,%eax            eax=0
+400fac:    05 46 02 00 00          add    $0x246,%eax            eax+0x246
+400fb1:    eb 05                   jmp    400fb8 &lt;phase_3+0x5d&gt;  跳0x400fb8
+
+400fb3:    b8 00 00 00 00          mov    $0x0,%eax             eax=0
+400fb8:    2d b9 02 00 00          sub    $0x2b9,%eax           eax-0x2b9
+400fbd:    eb 05                   jmp    400fc4 &lt;phase_3+0x69&gt;  跳0x400fc4
+
+400fbf:    b8 00 00 00 00          mov    $0x0,%eax            eax=0
+400fc4:    05 b9 02 00 00          add    $0x2b9,%eax           eax+0x2b9
+400fc9:    eb 05                   jmp    400fd0 &lt;phase_3+0x75&gt;  跳0x400fd0
+
+400fcb:    b8 00 00 00 00          mov    $0x0,%eax             eax=0
+400fd0:    2d b9 02 00 00          sub    $0x2b9,%eax           eax-0x2b9
+400fd5:    eb 05                   jmp    400fdc &lt;phase_3+0x81&gt;  跳0x400fdc
+
+400fd7:    b8 00 00 00 00          mov    $0x0,%eax           eax=0
+400fdc:    05 b9 02 00 00          add    $0x2b9,%eax           eax+0x2b9
+400fe1:    eb 05                   jmp    400fe8 &lt;phase_3+0x8d&gt;  跳0x400fe8
+
+400fe3:    b8 00 00 00 00          mov    $0x0,%eax           eax=0
+400fe8:    2d b9 02 00 00          sub    $0x2b9,%eax          eax-0x2b9
+400fed:    eb 0a                   jmp    400ff9 &lt;phase_3+0x9e&gt; ; 跳0x400ff9
+</code></pre>
+<p>注意到这堆case都没有break，为了方便计算先试试第一个数填7，从<code>400fe3</code>开始跑，<code>%eax</code> = 0-0x2b9 = -697，然后跳到<code>400ff9</code></p>
+<pre><code>400ff9:    83 7c 24 0c 05          cmpl   $0x5,0xc(%rsp)       比较第一个数和5
+400ffe:    7f 06                   jg     401006 &lt;phase_3+0xab&gt;  如果大于则跳0x401006 boom
+</code></pre>
+<p>然后就是比较比较<code>%eax</code>是否和第二个数相等</p>
+<pre><code>401000:    3b 44 24 08             cmp    0x8(%rsp),%eax 
+401004:    74 05                   je     40100b &lt;phase_3+0xb0&gt;  相等则accept
+</code></pre>
+<p>在<code>400ff9</code>发现第一个数还不能大于5，那说明填7不行，所以尝试填5，从<code>400fcb</code>开始，<code>%eax</code> = 0-0x2b9+0x2b9-0x2b9 = -697<br>
+所以phase3的key可以是 5 -697，用gdb调试通过了，当然第一个数不同就会有不同的解，我懒得一个个算了</p>
+<h3 id="思考：-2">思考：</h3>
+<p>switch语句根据跳转表跳转在练习里出现过，简简单单</p>
+<h2 id="phase-4">phase 4</h2>
+<h3 id="汇编代码：-3">汇编代码：</h3>
+<pre><code>0000000000401010 &lt;func4&gt;:
+  401010:       41 54                   push   %r12
+  401012:       55                      push   %rbp
+  401013:       53                      push   %rbx
+  401014:       89 fb                   mov    %edi,%ebx
+  401016:       85 ff                   test   %edi,%edi
+  401018:       7e 24                   jle    40103e &lt;func4+0x2e&gt;
+  40101a:       89 f5                   mov    %esi,%ebp
+  40101c:       89 f0                   mov    %esi,%eax
+  40101e:       83 ff 01                cmp    $0x1,%edi
+  401021:       74 20                   je     401043 &lt;func4+0x33&gt;
+  401023:       8d 7f ff                lea    -0x1(%rdi),%edi
+  401026:       e8 e5 ff ff ff          callq  401010 &lt;func4&gt;
+  40102b:       44 8d 24 28             lea    (%rax,%rbp,1),%r12d
+  40102f:       8d 7b fe                lea    -0x2(%rbx),%edi
+  401032:       89 ee                   mov    %ebp,%esi
+  401034:       e8 d7 ff ff ff          callq  401010 &lt;func4&gt;
+  401039:       44 01 e0                add    %r12d,%eax
+  40103c:       eb 05                   jmp    401043 &lt;func4+0x33&gt;
+  40103e:       b8 00 00 00 00          mov    $0x0,%eax
+  401043:       5b                      pop    %rbx
+  401044:       5d                      pop    %rbp
+  401045:       41 5c                   pop    %r12
+  401047:       c3                      retq
+
+0000000000401048 &lt;phase_4&gt;:
+  401048:       48 83 ec 18             sub    $0x18,%rsp
+  40104c:       48 8d 4c 24 0c          lea    0xc(%rsp),%rcx
+  401051:       48 8d 54 24 08          lea    0x8(%rsp),%rdx
+  401056:       be 01 28 40 00          mov    $0x402801,%esi
+  40105b:       b8 00 00 00 00          mov    $0x0,%eax
+  401060:       e8 cb fb ff ff          callq  400c30 &lt;__isoc99_sscanf@plt&gt;
+  401065:       83 f8 02                cmp    $0x2,%eax
+  401068:       75 0c                   jne    401076 &lt;phase_4+0x2e&gt;
+  40106a:       8b 44 24 0c             mov    0xc(%rsp),%eax
+  40106e:       83 e8 02                sub    $0x2,%eax
+  401071:       83 f8 02                cmp    $0x2,%eax
+  401074:       76 05                   jbe    40107b &lt;phase_4+0x33&gt;
+  401076:       e8 5e 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  40107b:       8b 74 24 0c             mov    0xc(%rsp),%esi
+  40107f:       bf 05 00 00 00          mov    $0x5,%edi
+  401084:       e8 87 ff ff ff          callq  401010 &lt;func4&gt;
+  401089:       3b 44 24 08             cmp    0x8(%rsp),%eax
+  40108d:       74 05                   je     401094 &lt;phase_4+0x4c&gt;
+  40108f:       e8 45 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  401094:       48 83 c4 18             add    $0x18,%rsp
+  401098:       c3                      retq
+</code></pre>
+<h3 id="思路：-3">思路：</h3>
+<p>看到在phase_4前面有一个func4，再看到phase_4有调用，就知道这个phase应该是关于函数调用的</p>
+<pre><code> 401056:       be 01 28 40 00          mov    $0x402801,%esi      
+ 40105b:       b8 00 00 00 00          mov    $0x0,%eax           
+ 401060:       e8 cb fb ff ff          callq  400c30 &lt;__isoc99_sscanf@plt&gt; 
+ 401065:       83 f8 02                cmp    $0x2,%eax          返回值是否为2
+ 401068:       75 0c                   jne    401076 &lt;phase_4+0x2e&gt; 不是则爆炸
+</code></pre>
+<p><code>0x402801</code>这个地址的东西在phase3看过了，可知也是读入两个数 <code>0x8(%rsp)</code>和<code>0xc(%rsp)</code>（熟悉）</p>
+<pre><code>Halfway there!
+1 2
+
+Breakpoint 2, 0x0000000000401089 in phase_4 ()
+(gdb) x /16xb $rsp
+0x7fffffffe760:	0x00	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+0x7fffffffe768:	0x01	0x00	0x00	0x00	0x02	0x00	0x00	0x00
+</code></pre>
+<p>看看位置，第一个数是 <code>0x8(%rsp)</code>，第二个是<code>0xc(%rsp)</code></p>
+<pre><code> 40106a:       8b 44 24 0c             mov    0xc(%rsp),%eax       eax=第二个数
+ 40106e:       83 e8 02                sub    $0x2,%eax           eax-2
+ 401071:       83 f8 02                cmp    $0x2,%eax            比较eax和2
+ 401074:       76 05                   jbe    40107b &lt;phase_4+0x33&gt;  &lt;=2跳转, 否则boom
+ 401076:       e8 5e 05 00 00          callq  4015d9 &lt;explode_bomb&gt;  
+ 40107b:       8b 74 24 0c             mov    0xc(%rsp),%esi       esi=第二个数
+ 40107f:       bf 05 00 00 00          mov    $0x5,%edi            edi=5
+ 401084:       e8 87 ff ff ff          callq  401010 &lt;func4&gt;       调用 func4
+ 401089:       3b 44 24 08            cmp    0x8(%rsp),%eax       
+ 40108d:       74 05                   je     401094 &lt;phase_4+0x4c&gt;  
+ 40108f:       e8 45 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+</code></pre>
+<p>由此可得第二个数要&lt;=4（不知道为什么，减了2以后小于零也是不行的，所以&gt;=2 maybe），然后把和5第二个数作为参数传入func4（func4接受<code>%edi</code>，<code>%esi</code>两个参数），即执行 <code>func4(5,D2)</code><br>
+然后比较第一个数D1和func4的返回值（存在<code>%eax</code>里），相等就accept否则炸弹爆炸</p>
+<p>所以，目标是求出一组D1D2使得<code>D1=func4(5,D2)</code><br>
+下面分析func4，一个递归函数，先翻译大概的伪代码</p>
+<pre><code>0000000000401010 &lt;func4&gt;:
+
+func(edi,esi)
+
+  401010:       41 54                   push   %r12
+  401012:       55                      push   %rbp
+  401013:       53                      push   %rbx
+
+  401014:       89 fb                   mov    %edi,%ebx
+
+ebx=edi
+
+  401016:       85 ff                   test   %edi,%edi
+  401018:       7e 24                   jle    40103e &lt;func4+0x2e&gt;
+
+if edi&lt;=0,return 0
+
+  40101a:       89 f5                   mov    %esi,%ebp
+  40101c:       89 f0                   mov    %esi,%eax
+
+ebp=esi
+eax=esi
+
+  40101e:       83 ff 01                cmp    $0x1,%edi
+  401021:       74 20                   je     401043 &lt;func4+0x33&gt;
+
+if edi=1,return esi 
+
+  401023:       8d 7f ff                lea    -0x1(%rdi),%edi
+  401026:       e8 e5 ff ff ff          callq  401010 &lt;func4&gt;
+
+edi--
+func(edi,esi)
+
+  40102b:       44 8d 24 28             lea    (%rax,%rbp,1),%r12d
+
+r12d=eax+ebp
+
+  40102f:       8d 7b fe                lea    -0x2(%rbx),%edi
+
+edi=ebx-2
+
+  401032:       89 ee                   mov    %ebp,%esi
+
+esi=ebp
+
+  401034:       e8 d7 ff ff ff          callq  401010 &lt;func4&gt;
+
+func(edi,esi)
+
+  401039:       44 01 e0                add    %r12d,%eax
+
+eax+=r12d
+
+  40103c:       eb 05                   jmp    401043 &lt;func4+0x33&gt;
+
+return eax
+
+  40103e:       b8 00 00 00 00          mov    $0x0,%eax
+
+eax=0
+
+  401043:       5b                      pop    %rbx
+  401044:       5d                      pop    %rbp
+  401045:       41 5c                   pop    %r12
+  401047:       c3                      retq
+</code></pre>
+<p>整理一下的得到的c代码就是（本人逆向工程水平太低，连蒙带猜）</p>
+<pre class=" language-c"><code class="prism  language-c"><span class="token keyword">int</span> <span class="token function">func4</span><span class="token punctuation">(</span><span class="token keyword">int</span> x<span class="token punctuation">,</span> <span class="token keyword">int</span> y<span class="token punctuation">)</span> <span class="token punctuation">{</span>
+   <span class="token keyword">if</span> <span class="token punctuation">(</span>x <span class="token operator">==</span> <span class="token number">0</span><span class="token punctuation">)</span> <span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>
+   <span class="token keyword">if</span> <span class="token punctuation">(</span>x <span class="token operator">==</span> <span class="token number">1</span><span class="token punctuation">)</span> <span class="token keyword">return</span> y<span class="token punctuation">;</span>
+   <span class="token keyword">return</span> <span class="token function">func4</span><span class="token punctuation">(</span>x <span class="token operator">-</span> <span class="token number">1</span><span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token function">func4</span><span class="token punctuation">(</span>x <span class="token operator">-</span> <span class="token number">2</span><span class="token punctuation">,</span> y<span class="token punctuation">)</span> <span class="token operator">+</span> y<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>在ide里跑了一下，猜测一组可能的key是 24 2（一开始12 1 过不了）运行就通过了这个phase</p>
+<p><strong>第二种方法：</strong><br>
+有点取巧，这是正常推导过了以后才想到的，其实没必要反汇编func4，可以让bomb帮我们算出来<br>
+在phase_4最后比较func4返回值和D1是否相等的地方打一个断点，即<br>
+<code>0x401089</code>的cmp语句处</p>
+<pre><code>(gdb) break *0x401089
+Breakpoint 2 at 0x401089
+</code></pre>
+<p>输入随便一个D1和一个合法的D2 ,等它在第二个断点停下，这时已经跑过了func4，也就是说<code>%eax</code>里面存的值就是我们想要的<br>
+打印<code>%eax</code></p>
+<pre><code>Halfway there!
+1 2  
+
+Breakpoint 2, 0x0000000000401089 in phase_4 ()
+(gdb) print $eax
+$1 = 24
+</code></pre>
+<p>可见 24 2是一对可行的key</p>
+<h3 id="思考：-3">思考：</h3>
+<p>这个phase卡了挺久，主要是不熟悉反汇编，一开始推出来的函数错了，在翻译递归函数碰到很多困难，主要在于换来换去的临时寄存器资源<br>
+读入两个数，和phase3一样，但是为什么顺序却是反的（打印了栈里的内容才发现的）</p>
+<h2 id="phase-5">phase 5</h2>
+<h3 id="汇编代码：-4">汇编代码：</h3>
+<pre><code>0000000000401099 &lt;phase_5&gt;:
+  401099:       53                      push   %rbx
+  40109a:       48 83 ec 10             sub    $0x10,%rsp
+  40109e:       48 89 fb                mov    %rdi,%rbx
+  4010a1:       e8 6b 02 00 00          callq  401311 &lt;string_length&gt;
+  4010a6:       83 f8 06                cmp    $0x6,%eax
+  4010a9:       74 3f                   je     4010ea &lt;phase_5+0x51&gt;
+  4010ab:       e8 29 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  4010b0:       eb 38                   jmp    4010ea &lt;phase_5+0x51&gt;
+  4010b2:       0f b6 14 03             movzbl (%rbx,%rax,1),%edx
+  4010b6:       83 e2 0f                and    $0xf,%edx
+  4010b9:       0f b6 92 d0 25 40 00    movzbl 0x4025d0(%rdx),%edx
+  4010c0:       88 14 04                mov    %dl,(%rsp,%rax,1)
+  4010c3:       48 83 c0 01             add    $0x1,%rax
+  4010c7:       48 83 f8 06             cmp    $0x6,%rax
+  4010cb:       75 e5                   jne    4010b2 &lt;phase_5+0x19&gt;
+  4010cd:       c6 44 24 06 00          movb   $0x0,0x6(%rsp)
+  4010d2:       be 86 25 40 00          mov    $0x402586,%esi
+  4010d7:       48 89 e7                mov    %rsp,%rdi
+  4010da:       e8 4f 02 00 00          callq  40132e &lt;strings_not_equal&gt;
+  4010df:       85 c0                   test   %eax,%eax
+  4010e1:       74 0f                   je     4010f2 &lt;phase_5+0x59&gt;
+  4010e3:       e8 f1 04 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  4010e8:       eb 08                   jmp    4010f2 &lt;phase_5+0x59&gt;
+  4010ea:       b8 00 00 00 00          mov    $0x0,%eax
+  4010ef:       90                      nop
+  4010f0:       eb c0                   jmp    4010b2 &lt;phase_5+0x19&gt;
+  4010f2:       48 83 c4 10             add    $0x10,%rsp
+  4010f6:       5b                      pop    %rbx
+  4010f7:       c3                      retq
+</code></pre>
+<h3 id="思路：-4">思路：</h3>
+<pre><code>  401099:       53                      push   %rbx
+  40109a:       48 83 ec 10             sub    $0x10,%rsp
+  40109e:       48 89 fb                mov    %rdi,%rbx rbx=输入的字符串
+  4010a1:       e8 6b 02 00 00          callq  401311 &lt;string_length&gt;
+  4010a6:       83 f8 06                cmp    $0x6,%eax
+  4010a9:       74 3f                   je     4010ea &lt;phase_5+0x51&gt; 长度是6
+  4010ab:       e8 29 05 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  4010b0:       eb 38                   jmp    4010ea &lt;phase_5+0x51&gt;
+</code></pre>
+<p>phase 5是读入一个字符串，长度为6，再继续看下去</p>
+<pre><code> 4010ea:       b8 00 00 00 00          mov    $0x0,%eax
+ 4010ef:       90                      nop
+ 4010f0:       eb c0                   jmp    4010b2 &lt;phase_5+0x19&gt;
+</code></pre>
+<p>这里把eax置零，然后跳到前面的 <code>4010b2</code></p>
+<pre><code> 4010b2:       0f b6 14 03             movzbl (%rbx,%rax,1),%edx edx=rbx+rax,进行了扩展
+ 4010b6:       83 e2 0f                and    $0xf,%edx  取低四位
+ 4010b9:       0f b6 92 d0 25 40 00    movzbl 0x4025d0(%rdx),%edx
+ 4010c0:       88 14 04                mov    %dl,(%rsp,%rax,1)
+ 4010c3:       48 83 c0 01             add    $0x1,%rax
+ 4010c7:       48 83 f8 06             cmp    $0x6,%rax
+ 4010cb:       75 e5                   jne    4010b2 &lt;phase_5+0x19&gt;
+</code></pre>
+<p>是一个循环，对字符串进行了一些看起来很混乱的操作，下面慢慢分析一下<br>
+先看循环退出条件</p>
+<pre><code> 4010c7:       48 83 f8 06             cmp    $0x6,%rax
+ 4010cb:       75 e5                   jne    4010b2 
+</code></pre>
+<p>退出条件是<code>%rax</code>里面的值等于6，<code>%rax</code>已经在<code>4010ea</code>置为0了，看字符串长度也是6，可以猜想rax是一个游标，目的是对字符串的每一位操作，看回循环里</p>
+<pre><code> 4010b2:       0f b6 14 03             movzbl (%rbx,%rax,1),%edx edx=rbx+rax,进行了扩展
+ 4010b6:       83 e2 0f                and    $0xf,%edx  取低四位
+</code></pre>
+<p>还看到<code>4010c3</code>有rax++，是遍历没错</p>
+<p><code>%rdx</code>是<code>%rbx</code>对应的地址的第<code>%rax</code>个字节，与<code>0xf</code>进行位与运算，即取<code>%rdx</code>的低四位，<code>%rdx</code>的值从0～15共16种可能<br>
+（好像字符串hash啊）</p>
+<p>继续看下去</p>
+<pre><code>  4010b9:       0f b6 92 d0 25 40 00    movzbl 0x4025d0(%rdx),%edx
+  4010c0:       88 14 04                mov    %dl,(%rsp,%rax,1)
+</code></pre>
+<p>在<code>4010b9</code>处，把<code>0x4025d0</code>加上<code>%rdx</code>得到的地址里面的值放回<code>%rdx</code><br>
+<code>4010c0</code>处是把得到的新值进栈<br>
+（%dl是%rdx的低8位，为什么要用它而不是%rdx或者%edx呢我也不知道）</p>
+<p>所以，这个过程就是把原字符串加密，对应表是<code>0x4025d0</code>后面16位范围里的值，用gdb看看</p>
+<pre><code>(gdb) x /s 0x4025d0
+0x4025d0 &lt;array.3159&gt;:	"maduiersnfotvbylSo you think you can stop the bomb with ctrl-c, do you?"
+</code></pre>
+<p><strong>maduiersnfotvbyl</strong>对应着16个hash后的数字，下面可以印一张对应表</p>
+<pre class=" language-c"><code class="prism  language-c"><span class="token keyword">char</span> blo <span class="token punctuation">[</span><span class="token number">17</span><span class="token punctuation">]</span> <span class="token operator">=</span> <span class="token string">"maduiersnfotvbyl"</span><span class="token punctuation">;</span>
+<span class="token keyword">int</span> <span class="token function">main</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+    <span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> i<span class="token operator">=</span><span class="token string">'a'</span><span class="token punctuation">;</span>i<span class="token operator">&lt;</span><span class="token string">'a'</span><span class="token operator">+</span><span class="token number">26</span><span class="token punctuation">;</span>i<span class="token operator">++</span><span class="token punctuation">)</span> <span class="token punctuation">{</span>
+        <span class="token keyword">int</span> hashc <span class="token operator">=</span> i <span class="token operator">&amp;</span> <span class="token number">0xf</span><span class="token punctuation">;</span>
+        cout<span class="token operator">&lt;&lt;</span><span class="token punctuation">(</span><span class="token keyword">char</span><span class="token punctuation">)</span>i<span class="token operator">&lt;&lt;</span><span class="token string">"-"</span><span class="token operator">&lt;&lt;</span>blo<span class="token punctuation">[</span>hashc<span class="token punctuation">]</span><span class="token operator">&lt;&lt;</span>endl<span class="token punctuation">;</span>
+    <span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<pre><code>a-a b-d c-u d-i e-e f-r g-s h-n i-f
+j-o k-t l-v m-b n-y o-l p-m q-a r-d
+s-u t-i u-e v-r w-s x-n y-f z-o
+</code></pre>
+<p>下面的代码就是匹配了</p>
+<pre><code>  4010cd:       c6 44 24 06 00          movb   $0x0,0x6(%rsp)
+  4010d2:       be 86 25 40 00          mov    $0x402586,%esi
+  4010d7:       48 89 e7                mov    %rsp,%rdi
+  4010da:       e8 4f 02 00 00          callq  40132e &lt;strings_not_equal&gt;
+  4010df:       85 c0                   test   %eax,%eax
+  4010e1:       74 0f                   je     4010f2 &lt;phase_5+0x59&gt;
+  4010e3:       e8 f1 04 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  4010e8:       eb 08                   jmp    4010f2 &lt;phase_5+0x59&gt;
+</code></pre>
+<p><code>4010cd</code>先在加密后字符串后面加0，用phase1里面出现过的<code>strings_not_equal</code>函数，和位于<code>0x402586</code>的字符串匹配</p>
+<p>破解方法就出来了：只要把<code>402586</code>处的答案字符串按照表格倒推就能求出key，用gdb看看<code>402586</code>处有什么</p>
+<pre><code>(gdb) x /s 0x402586
+0x402586:	"bruins"
+</code></pre>
+<p>查表得到对应的key为 mfcdhg，通过了<br>
+当然也会有其它答案，因为一个hash值可以对应多个字母</p>
+<h3 id="思考：-4">思考：</h3>
+<p>难度骤降，因为这个加密太明显，更复杂的加密就没办法通过直接推密文的方法破解了</p>
+<h2 id="phase-6">phase 6</h2>
+<h3 id="汇编代码：-5">汇编代码：</h3>
+<pre><code>00000000004010f8 &lt;phase_6&gt;:
+  4010f8:       41 56                   push   %r14
+  4010fa:       41 55                   push   %r13
+  4010fc:       41 54                   push   %r12
+  4010fe:       55                      push   %rbp
+  4010ff:       53                      push   %rbx
+  401100:       48 83 ec 50             sub    $0x50,%rsp
+  401104:       4c 8d 6c 24 30          lea    0x30(%rsp),%r13
+  401109:       4c 89 ee                mov    %r13,%rsi
+  40110c:       e8 fe 04 00 00          callq  40160f &lt;read_six_numbers&gt;
+  401111:       4d 89 ee                mov    %r13,%r14
+  401114:       41 bc 00 00 00 00       mov    $0x0,%r12d
+  40111a:       4c 89 ed                mov    %r13,%rbp
+  40111d:       41 8b 45 00             mov    0x0(%r13),%eax
+  401121:       83 e8 01                sub    $0x1,%eax
+  401124:       83 f8 05                cmp    $0x5,%eax
+  401127:       76 05                   jbe    40112e &lt;phase_6+0x36&gt;
+  401129:       e8 ab 04 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  40112e:       41 83 c4 01             add    $0x1,%r12d
+  401132:       41 83 fc 06             cmp    $0x6,%r12d
+  401136:       74 22                   je     40115a &lt;phase_6+0x62&gt;
+  401138:       44 89 e3                mov    %r12d,%ebx
+  40113b:       48 63 c3                movslq %ebx,%rax
+  40113e:       8b 44 84 30             mov    0x30(%rsp,%rax,4),%eax
+  401142:       39 45 00                cmp    %eax,0x0(%rbp)
+  401145:       75 05                   jne    40114c &lt;phase_6+0x54&gt;
+  401147:       e8 8d 04 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  40114c:       83 c3 01                add    $0x1,%ebx
+  40114f:       83 fb 05                cmp    $0x5,%ebx
+  401152:       7e e7                   jle    40113b &lt;phase_6+0x43&gt;
+  401154:       49 83 c5 04             add    $0x4,%r13
+  401158:       eb c0                   jmp    40111a &lt;phase_6+0x22&gt;
+  40115a:       48 8d 74 24 48          lea    0x48(%rsp),%rsi
+  40115f:       4c 89 f0                mov    %r14,%rax
+  401162:       b9 07 00 00 00          mov    $0x7,%ecx
+  401167:       89 ca                   mov    %ecx,%edx
+  401169:       2b 10                   sub    (%rax),%edx
+  40116b:       89 10                   mov    %edx,(%rax)
+  40116d:       48 83 c0 04             add    $0x4,%rax
+  401171:       48 39 f0                cmp    %rsi,%rax
+  401174:       75 f1                   jne    401167 &lt;phase_6+0x6f&gt;
+  401176:       be 00 00 00 00          mov    $0x0,%esi
+  40117b:       eb 20                   jmp    40119d &lt;phase_6+0xa5&gt;
+  40117d:       48 8b 52 08             mov    0x8(%rdx),%rdx
+  401181:       83 c0 01                add    $0x1,%eax
+  401184:       39 c8                   cmp    %ecx,%eax
+  401186:       75 f5                   jne    40117d &lt;phase_6+0x85&gt;
+  401188:       eb 05                   jmp    40118f &lt;phase_6+0x97&gt;
+  40118a:       ba f0 42 60 00          mov    $0x6042f0,%edx
+  40118f:       48 89 14 74             mov    %rdx,(%rsp,%rsi,2)
+  401193:       48 83 c6 04             add    $0x4,%rsi
+  401197:       48 83 fe 18             cmp    $0x18,%rsi
+  40119b:       74 15                   je     4011b2 &lt;phase_6+0xba&gt;
+  40119d:       8b 4c 34 30             mov    0x30(%rsp,%rsi,1),%ecx
+  4011a1:       83 f9 01                cmp    $0x1,%ecx
+  4011a4:       7e e4                   jle    40118a &lt;phase_6+0x92&gt;
+  4011a6:       b8 01 00 00 00          mov    $0x1,%eax
+  4011ab:       ba f0 42 60 00          mov    $0x6042f0,%edx
+  4011b0:       eb cb                   jmp    40117d &lt;phase_6+0x85&gt;
+  4011b2:       48 8b 1c 24             mov    (%rsp),%rbx
+  4011b6:       48 8d 44 24 08          lea    0x8(%rsp),%rax
+  4011bb:       48 8d 74 24 30          lea    0x30(%rsp),%rsi
+  4011c0:       48 89 d9                mov    %rbx,%rcx
+  4011c3:       48 8b 10                mov    (%rax),%rdx
+  4011c6:       48 89 51 08             mov    %rdx,0x8(%rcx)
+  4011ca:       48 83 c0 08             add    $0x8,%rax
+  4011ce:       48 39 f0                cmp    %rsi,%rax
+  4011d1:       74 05                   je     4011d8 &lt;phase_6+0xe0&gt;
+  4011d3:       48 89 d1                mov    %rdx,%rcx
+  4011d6:       eb eb                   jmp    4011c3 &lt;phase_6+0xcb&gt;
+  4011d8:       48 c7 42 08 00 00 00    movq   $0x0,0x8(%rdx)
+  4011df:       00
+  4011e0:       bd 05 00 00 00          mov    $0x5,%ebp
+  4011e5:       48 8b 43 08             mov    0x8(%rbx),%rax
+  4011e9:       8b 00                   mov    (%rax),%eax
+  4011eb:       39 03                   cmp    %eax,(%rbx)
+  4011ed:       7d 05                   jge    4011f4 &lt;phase_6+0xfc&gt;
+  4011ef:       e8 e5 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  4011f4:       48 8b 5b 08             mov    0x8(%rbx),%rbx
+  4011f8:       83 ed 01                sub    $0x1,%ebp
+  4011f4:       48 8b 5b 08             mov    0x8(%rbx),%rbx
+  4011f8:       83 ed 01                sub    $0x1,%ebp
+  4011fb:       75 e8                   jne    4011e5 &lt;phase_6+0xed&gt;
+  4011fd:       48 83 c4 50             add    $0x50,%rsp
+  401201:       5b                      pop    %rbx
+  401202:       5d                      pop    %rbp
+  401203:       41 5c                   pop    %r12
+  401205:       41 5d                   pop    %r13
+  401207:       41 5e                   pop    %r14
+  401209:       c3                      retq
+</code></pre>
+<h3 id="思路：-5">思路：</h3>
+<p>phase6的汇编代码太长了，一段段看</p>
+<pre><code>  401100:       48 83 ec 50             sub    $0x50,%rsp
+  401104:       4c 8d 6c 24 30          lea    0x30(%rsp),%r13
+  401109:       4c 89 ee                mov    %r13,%rsi
+  401111:       4d 89 ee                mov    %r13,%r14
+</code></pre>
+<p><code>0x30(%rsp)</code>是我们输入数据的起始地址<br>
+这里是在开辟栈空间，将输入数据起始地址赋给<code>%rsi</code>，<code>%r13</code>和<code>%r14</code></p>
+<pre><code> 40110c:       e8 fe 04 00 00          callq  40160f&lt;read_six_numbers&gt; 
+</code></pre>
+<p>然后把<code>%rsi</code>作为参数传给<code>&lt;read_six_numbers&gt;</code></p>
+<p>下面这堆东西是一个循环</p>
+<pre><code>  401114:       41 bc 00 00 00 00       mov    $0x0,%r12d
+
+  40111a:       4c 89 ed                mov    %r13,%rbp
+  40111d:       41 8b 45 00             mov    0x0(%r13),%eax
+  401121:       83 e8 01                sub    $0x1,%eax
+  401124:       83 f8 05                cmp    $0x5,%eax
+  401127:       76 05                   jbe    40112e &lt;phase_6+0x36&gt;
+  401129:       e8 ab 04 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  
+  40112e:       41 83 c4 01             add    $0x1,%r12d
+  401132:       41 83 fc 06             cmp    $0x6,%r12d
+  401136:       74 22                   je     40115a &lt;phase_6+0x62&gt;
+  
+  401138:       44 89 e3                mov    %r12d,%ebx
+  40113b:       48 63 c3                movslq %ebx,%rax
+  40113e:       8b 44 84 30             mov    0x30(%rsp,%rax,4),%eax
+  401142:       39 45 00                cmp    %eax,0x0(%rbp)
+  401145:       75 05                   jne    40114c &lt;phase_6+0x54&gt;
+  401147:       e8 8d 04 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  
+  40114c:       83 c3 01                add    $0x1,%ebx
+  40114f:       83 fb 05                cmp    $0x5,%ebx
+  401152:       7e e7                   jle    40113b &lt;phase_6+0x43&gt;
+  
+  401154:       49 83 c5 04             add    $0x4,%r13
+  401158:       eb c0                   jmp    40111a &lt;phase_6+0x22&gt;
+</code></pre>
+<p>详细分析一下这个循环：</p>
+<p>看开头，在<code>401114</code>处，熟悉的置零又出现了，被置零，猜想<code>%r12d</code>是游标，在<code>40112e</code>果然就找到了对<code>%r12d</code>++</p>
+<p>但同时我们看到<code>40114c</code>也有一个add指令，对<code>%ebx</code>++，如果它也是游标那可能是两层循环，找找它的 Init stmt 在哪：<code>401138</code>处，令<code>%ebx</code>等于<code>%r12d</code>，可见<code>%ebx</code>是内层循环游标，<code>%r12d</code>是外层循环的游标</p>
+<p>再找 Loop cond ，一般就在add后面</p>
+<p>对于<code>%r12d</code>，等于6的时候退出，为&lt;6</p>
+<pre><code>  401132:       41 83 fc 06             cmp    $0x6,%r12d
+  401136:       74 22                   je     40115a &lt;phase_6+0x62&gt;
+</code></pre>
+<p>对于<code>%ebx</code>，小于等于5的时候继续循环，也为 &lt;6</p>
+<pre><code> 40114f:       83 fb 05                cmp    $0x5,%ebx
+ 401152:       7e e7                   jle    40113b &lt;phase_6+0x43&gt;
+</code></pre>
+<p>注意到<code>401138</code>处给<code>%ebx</code>赋值已经是++后的了，现在可以写出双层循环的框架:</p>
+<pre class=" language-c"><code class="prism  language-c"><span class="token operator">/</span><span class="token operator">%</span>r12d i<span class="token punctuation">,</span><span class="token operator">%</span>ebx j<span class="token operator">/</span>
+<span class="token keyword">for</span><span class="token punctuation">(</span><span class="token keyword">int</span> i<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>i<span class="token operator">&lt;</span><span class="token number">6</span><span class="token punctuation">;</span>i<span class="token operator">++</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+	<span class="token keyword">for</span><span class="token punctuation">(</span><span class="token keyword">int</span> j<span class="token operator">=</span>i<span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">;</span>j<span class="token operator">&lt;</span><span class="token number">6</span><span class="token punctuation">;</span>j<span class="token operator">++</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+	
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>看看游标是用来调用什么的</p>
+<pre><code>  40113b:       48 63 c3                movslq %ebx,%rax
+  40113e:       8b 44 84 30             mov    0x30(%rsp,%rax,4),%eax
+</code></pre>
+<p>这几句读取 <code>0x30 + %rsp + %rax * 4</code> 处的数据，赋值给 <code>%eax</code>（<code>%rax</code>就是<code>%ebx</code>，做了一个扩展），<code>0x30 + %rsp</code>是读入六个数字的开头，所以%eax是一个调用游标</p>
+<p>这个时候还是没找到<code>r12d</code>参与的调用，但注意到大循环内的结尾（即每结束一个小循环）会把<code>%r13</code>+=4（<code>401154</code>处），在大循环的开头会把<code>%r13</code>赋给<code>%rbp</code>，考虑真正的调用游标是<code>%r13</code>（<code>%rbp</code>），<code>r12d</code>只是用来计次数的（不过我们可以把二者合并成一个游标）</p>
+<p>翻译两个炸弹爆炸的if语句，就可以还原整个循环了</p>
+<pre class=" language-c"><code class="prism  language-c"><span class="token keyword">int</span> a<span class="token punctuation">[</span><span class="token number">6</span><span class="token punctuation">]</span><span class="token punctuation">;</span> <span class="token comment">// 我们输入的数组</span>
+<span class="token keyword">for</span><span class="token punctuation">(</span><span class="token keyword">int</span> i<span class="token operator">=</span><span class="token number">0</span><span class="token punctuation">;</span>i<span class="token operator">&lt;</span><span class="token number">6</span><span class="token punctuation">;</span>i<span class="token operator">++</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+	<span class="token keyword">if</span><span class="token punctuation">(</span>a<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">&lt;</span><span class="token number">1</span><span class="token operator">||</span>a<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">&gt;</span><span class="token number">6</span><span class="token punctuation">)</span><span class="token function">explode_bomb</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token keyword">for</span> <span class="token punctuation">(</span><span class="token keyword">int</span> j<span class="token operator">=</span>i<span class="token operator">+</span><span class="token number">1</span><span class="token punctuation">;</span>j<span class="token operator">&lt;</span><span class="token number">6</span><span class="token punctuation">;</span>j<span class="token operator">++</span><span class="token punctuation">)</span><span class="token punctuation">{</span>
+		<span class="token keyword">if</span> <span class="token punctuation">(</span>a<span class="token punctuation">[</span>i<span class="token punctuation">]</span><span class="token operator">==</span>a<span class="token punctuation">[</span>j<span class="token punctuation">]</span><span class="token punctuation">)</span><span class="token function">explode_bomb</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+	<span class="token punctuation">}</span>
+<span class="token punctuation">}</span>
+</code></pre>
+<p>可知我们输入的六个数一定是1到6这六个（调试也得此结论正确）</p>
+<p>再往下看</p>
+<pre><code>  40115a:       48 8d 74 24 48          lea    0x48(%rsp),%rsi
+  40115f:       4c 89 f0                mov    %r14,%rax
+  401162:       b9 07 00 00 00          mov    $0x7,%ecx
+  
+  401167:       89 ca                   mov    %ecx,%edx
+  401169:       2b 10                   sub    (%rax),%edx
+  40116b:       89 10                   mov    %edx,(%rax)
+  40116d:       48 83 c0 04             add    $0x4,%rax
+  
+  401171:       48 39 f0                cmp    %rsi,%rax
+  401174:       75 f1                   jne    401167 &lt;phase_6+0x6f&gt;
+</code></pre>
+<p>又发现一个循环，不过这是一个简单的单层循环，就直接读好了：<br>
+把输入数据起始地址赋给<code>%rax</code>做游标，每次循环+4移到下一个数 ，移到末尾结束<br>
+<code>%ecx</code>=7，在<code>401169</code>处，计算<code>7-%rax</code>的值，存在<code>%edx</code>里，再把<code>%edx</code>赋回<code>%rax</code>，即 x=7-x</p>
+<p>所以这个循环的作用就是把整个数组加个密</p>
+<p>然后</p>
+<pre><code>  401176:       be 00 00 00 00          mov    $0x0,%esi
+  40117b:       eb 20                   jmp    40119d &lt;phase_6+0xa5&gt;
+</code></pre>
+<p>把<code>%esi</code>置零（又是一个游标），跳到后面一堆代码中间(<code>40119d</code>)<br>
+接下来的部分就很复杂了，有很多个跳转和条件跳转</p>
+<p>首先，注意到</p>
+<pre><code> 40117d:       48 8b 52 08             mov    0x8(%rdx),%rdx
+</code></pre>
+<p><code>%rdx</code>自增8，以及</p>
+<pre><code>  40118a:       ba f0 42 60 00          mov    $0x6042f0,%edx
+</code></pre>
+<p>可以知道， <code>%rdx</code>存了一个地址，应该是一个指针，而且这个地址属于全局地址（60开头），指向的东西大小是8Byte，用gdb看看这里面有什么</p>
+<pre><code>(gdb) x /96xb 0x6042f0
+0x6042f0 &lt;node1&gt;:	0xa2	0x01	0x00	0x00	0x01	0x00	0x00	0x00
+0x6042f8 &lt;node1+8&gt;:	0x00	0x00	0x00	0x00	0x00	0x00	0x00	0x00
+0x604300 &lt;node2&gt;:	0x8b	0x03	0x00	0x00	0x02	0x00	0x00	0x00
+0x604308 &lt;node2+8&gt;:	0xf0	0x42	0x60	0x00	0x00	0x00	0x00	0x00
+0x604310 &lt;node3&gt;:	0x99	0x01	0x00	0x00	0x03	0x00	0x00	0x00
+0x604318 &lt;node3+8&gt;:	0x00	0x43	0x60	0x00	0x00	0x00	0x00	0x00
+0x604320 &lt;node4&gt;:	0x13	0x01	0x00	0x00	0x04	0x00	0x00	0x00
+0x604328 &lt;node4+8&gt;:	0x10	0x43	0x60	0x00	0x00	0x00	0x00	0x00
+0x604330 &lt;node5&gt;:	0x5b	0x02	0x00	0x00	0x05	0x00	0x00	0x00
+0x604338 &lt;node5+8&gt;:	0x20	0x43	0x60	0x00	0x00	0x00	0x00	0x00
+0x604340 &lt;node6&gt;:	0x84	0x00	0x00	0x00	0x06	0x00	0x00	0x00
+0x604348 &lt;node6+8&gt;:	0x30	0x43	0x60	0x00	0x00	0x00	0x00    0x00
+</code></pre>
+<p>尝试了几次8的倍数，把有名字的结构都打印出来了，看到命名是node，猜想是某种链式结构的节点， 每个node有16Byte也就是两个Word，换个单位再打印试试</p>
+<pre><code>(gdb) x /24w 0x6042f0
+0x6042f0 &lt;node1&gt;:	0x000001a2	0x00000001	0x00000000	0x00000000
+0x604300 &lt;node2&gt;:	0x0000038b	0x00000002	0x006042f0	0x00000000
+0x604310 &lt;node3&gt;:	0x00000199	0x00000003	0x00604300	0x00000000
+0x604320 &lt;node4&gt;:	0x00000113	0x00000004	0x00604310	0x00000000
+0x604330 &lt;node5&gt;:	0x0000025b	0x00000005	0x00604320	0x00000000
+0x604340 &lt;node6&gt;:	0x00000084	0x00000006	0x00604330	0x00000000
+</code></pre>
+<p>现在能看出来这是一个单链表了</p>
+<p>接着看代码，我们输入的数究竟有什么用处？<br>
+之前说到把输入的数加密以后就到了<code>40119d</code></p>
+<pre><code> 40117d:       48 8b 52 08             mov    0x8(%rdx),%rdx
+ 401181:       83 c0 01                add    $0x1,%eax
+ 401184:       39 c8                   cmp    %ecx,%eax
+ 401186:       75 f5                   jne    40117d &lt;phase_6+0x85&gt;
+ 401188:       eb 05                   jmp    40118f &lt;phase_6+0x97&gt;
+ 
+ 40118a:       ba f0 42 60 00          mov    $0x6042f0,%edx
+ 
+ 40118f:       48 89 14 74             mov    %rdx,(%rsp,%rsi,2)
+ 401193:       48 83 c6 04             add    $0x4,%rsi
+ 401197:       48 83 fe 18             cmp    $0x18,%rsi
+ 40119b:       74 15                   je     4011b2 &lt;phase_6+0xba&gt;
+ 
+ 40119d:       8b 4c 34 30             mov    0x30(%rsp,%rsi,1),%ecx
+ 4011a1:       83 f9 01                cmp    $0x1,%ecx
+ 4011a4:       7e e4                   jle    40118a &lt;phase_6+0x92&gt;
+ 4011a6:       b8 01 00 00 00          mov    $0x1,%eax
+ 4011ab:       ba f0 42 60 00          mov    $0x6042f0,%edx
+ 4011b0:       eb cb                   jmp    40117d &lt;phase_6+0x85&gt;
+</code></pre>
+<p>这也是一个双层循环<br>
+<code>%rsi</code>在<code>401176</code>置零，是大循环的游标，<code>0x30(%rsp,%rsi,1)</code>就是数组第一个数<br>
+设为x，把它存进 <code>%ecx</code>，和1比较，如果不是1就进内层循环</p>
+<p>小循环的游标是<code>%eax</code>，一开始是1，每次自增1，出口在<code>401184</code>，所以Loop cond是&lt;=x<br>
+首先把指向第一个node的指针赋给%rdx，然后开始进行沿链表进行单向移动，每次小循环移动一步，直至到达第x个node，然后将这个node的指针存到从栈顶开始的一片空间</p>
+<p>在存指针的地方（<code>40118f</code>到<code>40119b</code>），我们也看到了大循环的出口：<br>
+大循环游标<code>%rsi</code>每次自增4，把第x个node的指针存到<code>%rsp+%rsi*2</code>的地方，六个node全部存进去的时候大循环结束</p>
+<p>下面举一个例子说明推出来的代码，假设内存中的链表节点序号如图</p>
+<pre><code> 1-&gt;2-&gt;3-&gt;4-&gt;5-&gt;6
+</code></pre>
+<p>输入的数是 5 3 1 6 4 2 ，加密的数组是 2 4 6 1 3 5<br>
+第一个数2，指向链表第2个节点的指针进栈<br>
+第二个数4，指向链表第4个节点的指针进栈<br>
+…<br>
+最后的栈如图</p>
+<pre><code> rsp+0    2
+ rsp+8    4
+ rsp+16   6
+ rsp+24   1
+ rsp+32   3
+ rsp+40   5
+</code></pre>
+<p>下一段就是按照栈中的顺序，把链表连起来，一个循环直接读</p>
+<pre><code>  4011b2:       48 8b 1c 24             mov    (%rsp),%rbx
+  4011b6:       48 8d 44 24 08          lea    0x8(%rsp),%rax
+  4011bb:       48 8d 74 24 30          lea    0x30(%rsp),%rsi
+  4011c0:       48 89 d9                mov    %rbx,%rcx
+  4011c3:       48 8b 10                mov    (%rax),%rdx
+  4011c6:       48 89 51 08             mov    %rdx,0x8(%rcx)
+  4011ca:       48 83 c0 08             add    $0x8,%rax
+  4011ce:       48 39 f0                cmp    %rsi,%rax
+  4011d1:       74 05                   je     4011d8 &lt;phase_6+0xe0&gt;
+  4011d3:       48 89 d1                mov    %rdx,%rcx
+  4011d6:       eb eb                   jmp    4011c3 &lt;phase_6+0xcb&gt;
+  4011d8:       48 c7 42 08 00 00 00    movq   $0x0,0x8(%rdx)
+</code></pre>
+<p>然后又是一个循环</p>
+<pre><code>  4011e0:       bd 05 00 00 00          mov    $0x5,%ebp
+  4011e5:       48 8b 43 08             mov    0x8(%rbx),%rax
+  4011e9:       8b 00                   mov    (%rax),%eax
+  4011eb:       39 03                   cmp    %eax,(%rbx)
+  4011ed:       7d 05                   jge    4011f4 &lt;phase_6+0xfc&gt;
+  4011ef:       e8 e5 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  4011f4:       48 8b 5b 08             mov    0x8(%rbx),%rbx
+  4011f8:       83 ed 01                sub    $0x1,%ebp
+  4011f4:       48 8b 5b 08             mov    0x8(%rbx),%rbx
+  4011f8:       83 ed 01                sub    $0x1,%ebp
+  4011fb:       75 e8                   jne    4011e5 &lt;phase_6+0xed&gt;
+</code></pre>
+<p>循环遍历链表，<code>%rbx</code>是当前节点，<code>4011e5</code>和<code>4011e9</code>把当前节点的下一个节点的值存进<code>%eax</code><br>
+<code>4011eb</code>比较<code>%rbx</code>指向的节点的值与<code>%eax</code>的值，大于等于的时候就跳过炸弹，否则爆炸</p>
+<p>所以到这一步的链表节点的值必须按照从大到小的顺序排列，可以倒推答案了<br>
+把<code>0x6042f0</code> 里链表节点按值排列得到<code>2-&gt;5-&gt;1-&gt;3-&gt;4-&gt;6</code><br>
+还原，得到key为 5 2 6 4 3 1</p>
+<h3 id="思考：-5">思考：</h3>
+<p>phase6很难，但没有想象中难，更多是考验综合能力，必须逆向工程还原出接近完整的代码逻辑<br>
+巩固了读循环语句的能力，两重循坏一堆游标跳来跳去也很考验耐心</p>
+<h2 id="secret_phase">Secret_Phase</h2>
+<p>做完phase6发现才95分，剩下5分在Secret_Phase里<br>
+在用objdump反汇编整个bomb时，注意到phase6后面还有两段代码</p>
+<pre><code>000000000040120a &lt;fun7&gt;:
+  40120a:       48 83 ec 08             sub    $0x8,%rsp
+  40120e:       48 85 ff                test   %rdi,%rdi
+  401211:       74 2b                   je     40123e &lt;fun7+0x34&gt;
+  401213:       8b 17                   mov    (%rdi),%edx
+  401215:       39 f2                   cmp    %esi,%edx
+  401217:       7e 0d                   jle    401226 &lt;fun7+0x1c&gt;
+  401219:       48 8b 7f 08             mov    0x8(%rdi),%rdi
+  40121d:       e8 e8 ff ff ff          callq  40120a &lt;fun7&gt;
+  401222:       01 c0                   add    %eax,%eax
+  401224:       eb 1d                   jmp    401243 &lt;fun7+0x39&gt;
+  401226:       b8 00 00 00 00          mov    $0x0,%eax
+  40122b:       39 f2                   cmp    %esi,%edx
+  40122d:       74 14                   je     401243 &lt;fun7+0x39&gt;
+  40122f:       48 8b 7f 10             mov    0x10(%rdi),%rdi
+  401233:       e8 d2 ff ff ff          callq  40120a &lt;fun7&gt;
+  401238:       8d 44 00 01             lea    0x1(%rax,%rax,1),%eax
+  40123c:       eb 05                   jmp    401243 &lt;fun7+0x39&gt;
+  40123e:       b8 ff ff ff ff          mov    $0xffffffff,%eax
+  401243:       48 83 c4 08             add    $0x8,%rsp
+  401247:       c3                      retq
+
+0000000000401248 &lt;secret_phase&gt;:
+  401248:       53                      push   %rbx
+  401249:       e8 03 04 00 00          callq  401651 &lt;read_line&gt;
+  40124e:       ba 0a 00 00 00          mov    $0xa,%edx
+  401253:       be 00 00 00 00          mov    $0x0,%esi
+  401258:       48 89 c7                mov    %rax,%rdi
+  40125b:       e8 a0 f9 ff ff          callq  400c00 &lt;strtol@plt&gt;
+  401260:       48 89 c3                mov    %rax,%rbx
+  401263:       8d 40 ff                lea    -0x1(%rax),%eax
+  401266:       3d e8 03 00 00          cmp    $0x3e8,%eax
+  40126b:       76 05                   jbe    401272 &lt;secret_phase+0x2a&gt;
+  40126d:       e8 67 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  401272:       89 de                   mov    %ebx,%esi
+  401274:       bf 10 41 60 00          mov    $0x604110,%edi
+  401279:       e8 8c ff ff ff          callq  40120a &lt;fun7&gt;
+  40127e:       83 f8 02                cmp    $0x2,%eax
+  401281:       74 05                   je     401288 &lt;secret_phase+0x40&gt;
+  401283:       e8 51 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  401281:       74 05                   je     401288 &lt;secret_phase+0x40&gt;
+  401283:       e8 51 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+  401288:       bf 60 25 40 00          mov    $0x402560,%edi
+  40128d:       e8 ae f8 ff ff          callq  400b40 &lt;puts@plt&gt;
+  401292:       e8 e0 04 00 00          callq  401777 &lt;phase_defused&gt;
+  401297:       5b                      pop    %rbx
+  401298:       c3                      retq
+  401299:       0f 1f 80 00 00 00 00    nopl   0x0(%rax)
+</code></pre>
+<h3 id="思路：-6">思路：</h3>
+<p>我们现在拿到了Secret_Phase的代码，但是注意在 bomb.c里面是看不到直接的隐藏关调用的，还需要寻找一个入口</p>
+<pre class=" language-c"><code class="prism  language-c"><span class="token punctuation">(</span>bomb<span class="token punctuation">.</span>c<span class="token punctuation">)</span>
+	<span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span>
+	input <span class="token operator">=</span> <span class="token function">read_line</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">phase_6</span><span class="token punctuation">(</span>input<span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token function">phase_defused</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+
+    <span class="token comment">/* Wow, they got it!  But isn't something... missing?  Perhaps
+     * something they overlooked?  Mua ha ha ha ha! */</span>
+</code></pre>
+<p>我们在<code>phase_defused</code>上打个断点看看汇编</p>
+<pre><code>Congratulations! You've defused the bomb!
+Your instructor has been notified and will verify your solution.
+[Inferior 1 (process 492) exited normally]
+(gdb) disas phase_defused
+Dump of assembler code for function phase_defused:
+   0x0000000000401777 &lt;+0&gt;:	sub    $0x68,%rsp
+   0x000000000040177b &lt;+4&gt;:	mov    $0x1,%edi
+   0x0000000000401780 &lt;+9&gt;:	callq  0x4014ba &lt;send_msg&gt;
+   0x0000000000401785 &lt;+14&gt;:	cmpl   $0x6,0x203010(%rip)        # 0x60479c &lt;num_input_strings&gt;
+   0x000000000040178c &lt;+21&gt;:	jne    0x4017fb &lt;phase_defused+132&gt;
+   0x000000000040178e &lt;+23&gt;:	lea    0x10(%rsp),%r8
+   0x0000000000401793 &lt;+28&gt;:	lea    0x8(%rsp),%rcx
+   0x0000000000401798 &lt;+33&gt;:	lea    0xc(%rsp),%rdx
+   0x000000000040179d &lt;+38&gt;:	mov    $0x40284b,%esi
+   0x00000000004017a2 &lt;+43&gt;:	mov    $0x6048b0,%edi
+   0x00000000004017a7 &lt;+48&gt;:	mov    $0x0,%eax
+   0x00000000004017ac &lt;+53&gt;:	callq  0x400c30 &lt;__isoc99_sscanf@plt&gt;
+   0x00000000004017b1 &lt;+58&gt;:	cmp    $0x3,%eax
+   0x00000000004017b4 &lt;+61&gt;:	jne    0x4017e7 &lt;phase_defused+112&gt;
+   0x00000000004017b6 &lt;+63&gt;:	mov    $0x402854,%esi
+   0x00000000004017bb &lt;+68&gt;:	lea    0x10(%rsp),%rdi
+   0x00000000004017c0 &lt;+73&gt;:	callq  0x40132e &lt;strings_not_equal&gt;
+   0x00000000004017c5 &lt;+78&gt;:	test   %eax,%eax
+   0x00000000004017c7 &lt;+80&gt;:	jne    0x4017e7 &lt;phase_defused+112&gt;
+   0x00000000004017c9 &lt;+82&gt;:	mov    $0x4026a0,%edi
+   0x00000000004017ce &lt;+87&gt;:	callq  0x400b40 &lt;puts@plt&gt;
+   0x00000000004017d3 &lt;+92&gt;:	mov    $0x4026c8,%edi
+   0x00000000004017d8 &lt;+97&gt;:	callq  0x400b40 &lt;puts@plt&gt;
+   0x00000000004017dd &lt;+102&gt;:	mov    $0x0,%eax
+   
+   0x00000000004017e2 &lt;+107&gt;:	callq  0x401248 &lt;secret_phase&gt;
+   
+   0x00000000004017e7 &lt;+112&gt;:	mov    $0x402700,%edi
+   0x00000000004017ec &lt;+117&gt;:	callq  0x400b40 &lt;puts@plt&gt;
+   0x00000000004017f1 &lt;+122&gt;:	mov    $0x402730,%edi
+   0x00000000004017f6 &lt;+127&gt;:	callq  0x400b40 &lt;puts@plt&gt;
+   0x00000000004017fb &lt;+132&gt;:	add    $0x68,%rsp
+   0x00000000004017ff &lt;+136&gt;:	retq   
+End of assembler dump.
+</code></pre>
+<p>看 <code>4017e2</code>，终于找到了 （csapp极小概率事件，bgm播放）</p>
+<pre><code>  0x00000000004017e2 &lt;+107&gt;:	callq  0x401248 &lt;secret_phase&gt;
+</code></pre>
+<p>检查整个函数，发现没有任何一条跳转语句直接跳到<code>4017e2</code>和前一个地址，所以进入方法是满足在<code>4017e2</code>前不跳转</p>
+<pre><code>   0x0000000000401785 &lt;+14&gt;:	cmpl   $0x6,0x203010(%rip)        # 0x60479c &lt;num_input_strings&gt;
+   0x000000000040178c &lt;+21&gt;:	jne    0x4017fb &lt;phase_defused+132&gt;
+</code></pre>
+<p>由此可知在整个程序中必须已经读入六个字符串，即通过了前面的所有phase</p>
+<pre><code>   0x000000000040179d &lt;+38&gt;:	mov    $0x40284b,%esi
+   0x00000000004017a2 &lt;+43&gt;:	mov    $0x6048b0,%edi
+   0x00000000004017a7 &lt;+48&gt;:	mov    $0x0,%eax
+   0x00000000004017ac &lt;+53&gt;:	callq  0x400c30 &lt;__isoc99_sscanf@plt&gt;
+   0x00000000004017b1 &lt;+58&gt;:	cmp    $0x3,%eax
+   0x00000000004017b4 &lt;+61&gt;:	jne    0x4017e7 &lt;phase_defused+112&gt;
+</code></pre>
+<p>由此可知需要读入三个参数</p>
+<p>打印一下<code>0x40284b</code>里的格式串</p>
+<pre><code>(gdb) x /s 0x40284b
+0x40284b:	"%d %d %s"
+</code></pre>
+<p>这个格式是我们在前面从来没有见过的，考虑前面有两个整型，应该是 phase3 或者 phase4<br>
+再看看这个字符串应该是什么东西</p>
+<pre><code>   0x00000000004017b6 &lt;+63&gt;:	mov    $0x402854,%esi
+   0x00000000004017bb &lt;+68&gt;:	lea    0x10(%rsp),%rdi
+   0x00000000004017c0 &lt;+73&gt;:	callq  0x40132e &lt;strings_not_equal&gt;
+</code></pre>
+<p>打印<code>0x402854</code>的值</p>
+<pre><code>(gdb) x /s 0x402854
+0x402854:	"DrEvil"
+</code></pre>
+<p>在 secret_phase 里面某个地方比如 <code>401249</code>打断点，调试得到phase4答案后面加DrEvil进去了</p>
+<pre><code>Curses, you've found the secret phase!
+But finding it and solving it are quite different...
+
+Breakpoint 2, 0x0000000000401249 in secret_phase ()
+</code></pre>
+<p>现在看 secret_phase 代码</p>
+<pre><code>0000000000401248 &lt;secret_phase&gt;:
+  401248:       53                      push   %rbx
+  401249:       e8 03 04 00 00          callq  401651 &lt;read_line&gt;
+  40124e:       ba 0a 00 00 00          mov    $0xa,%edx
+  401253:       be 00 00 00 00          mov    $0x0,%esi
+  401258:       48 89 c7                mov    %rax,%rdi
+  40125b:       e8 a0 f9 ff ff          callq  400c00 &lt;strtol@plt&gt;
+  401260:       48 89 c3                mov    %rax,%rbx
+  401263:       8d 40 ff                lea    -0x1(%rax),%eax
+  401266:       3d e8 03 00 00          cmp    $0x3e8,%eax
+  40126b:       76 05                   jbe    401272 &lt;secret_phase+0x2a&gt;
+  40126d:       e8 67 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+</code></pre>
+<p>要输入一个数字，strtol函数是将输入的字符串转换为long int，我们输入的数大小需要在1到0x3e9之间</p>
+<pre><code>  401272:       89 de                   mov    %ebx,%esi
+  401274:       bf 10 41 60 00          mov    $0x604110,%edi
+  401279:       e8 8c ff ff ff          callq  40120a &lt;fun7&gt;
+</code></pre>
+<p>第一个参数在<code>0x604110</code>，第二个数数是输入的数</p>
+<pre><code>  40127e:       83 f8 02                cmp    $0x2,%eax
+  401281:       74 05                   je     401288 &lt;secret_phase+0x40&gt;
+  401283:       e8 51 03 00 00          callq  4015d9 &lt;explode_bomb&gt;
+</code></pre>
+<p>fun7的返回值和2比较，不等就爆炸</p>
+<p>分析fun7，看到<code>401219</code>处，又出现了链式结构，尝试打印第一个传进来的参数<code>0x604110</code>附近有什么</p>
+<pre><code>(gdb) x /128xw 0x604110
+0x604110 &lt;n1&gt;:	0x00000024	0x00000000	0x00604130	0x00000000
+0x604120 &lt;n1+16&gt;:	0x00604150	0x00000000	0x00000000	0x00000000
+0x604130 &lt;n21&gt;:	0x00000008	0x00000000	0x006041b0	0x00000000
+0x604140 &lt;n21+16&gt;:	0x00604170	0x00000000	0x00000000	0x00000000
+0x604150 &lt;n22&gt;:	0x00000032	0x00000000	0x00604190	0x00000000
+0x604160 &lt;n22+16&gt;:	0x006041d0	0x00000000	0x00000000	0x00000000
+0x604170 &lt;n32&gt;:	0x00000016	0x00000000	0x00604290	0x00000000
+0x604180 &lt;n32+16&gt;:	0x00604250	0x00000000	0x00000000	0x00000000
+0x604190 &lt;n33&gt;:	0x0000002d	0x00000000	0x006041f0	0x00000000
+0x6041a0 &lt;n33+16&gt;:	0x006042b0	0x00000000	0x00000000	0x00000000
+0x6041b0 &lt;n31&gt;:	0x00000006	0x00000000	0x00604210	0x00000000
+0x6041c0 &lt;n31+16&gt;:	0x00604270	0x00000000	0x00000000	0x00000000
+0x6041d0 &lt;n34&gt;:	0x0000006b	0x00000000	0x00604230	0x00000000
+0x6041e0 &lt;n34+16&gt;:	0x006042d0	0x00000000	0x00000000	0x00000000
+0x6041f0 &lt;n45&gt;:	0x00000028	0x00000000	0x00000000	0x00000000
+0x604200 &lt;n45+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x604210 &lt;n41&gt;:	0x00000001	0x00000000	0x00000000	0x00000000
+0x604220 &lt;n41+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x604230 &lt;n47&gt;:	0x00000063	0x00000000	0x00000000	0x00000000
+0x604240 &lt;n47+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x604250 &lt;n44&gt;:	0x00000023	0x00000000	0x00000000	0x00000000
+0x604260 &lt;n44+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x604270 &lt;n42&gt;:	0x00000007	0x00000000	0x00000000	0x00000000
+0x604280 &lt;n42+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x604290 &lt;n43&gt;:	0x00000014	0x00000000	0x00000000	0x00000000
+0x6042a0 &lt;n43+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x6042b0 &lt;n46&gt;:	0x0000002f	0x00000000	0x00000000	0x00000000
+0x6042c0 &lt;n46+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x6042d0 &lt;n48&gt;:	0x000003e9	0x00000000	0x00000000	0x00000000
+0x6042e0 &lt;n48+16&gt;:	0x00000000	0x00000000	0x00000000	0x00000000
+0x6042f0 &lt;node1&gt;:	0x000001a2	0x00000001	0x00604310	0x00000000
+0x604300 &lt;node2&gt;:	0x0000038b	0x00000002	0x00604330	0x00000000
+</code></pre>
+<p>果然也是某种node（话说phase6链表的node在下面，靠这么近）<br>
+拎一个出来分析一下</p>
+<pre><code>0x604110 &lt;n1&gt;:	0x00000024	0x00000000	0x00604130	0x00000000
+0x604120 &lt;n1+16&gt;:	0x00604150	0x00000000	0x00000000	0x00000000
+</code></pre>
+<p>显然，前面存的是一个value，后面存的两个地址，一个数据域两个指针域，猜想是一棵二叉树的节点<br>
+尝试画出这棵树（16进制）</p>
+<pre><code>              24
+            /    \
+          /        \
+        /            \
+      8               32
+    /    \          /    \
+   /      \        /      \
+  6       16      2d      6b
+ / \     /  \    /  \    /   \
+1   7   14  23  28  2f  63  3e9
+</code></pre>
+<p>转成十进制是</p>
+<pre><code>              36
+            /    \
+          /        \
+        /            \
+      8               50
+    /    \          /    \
+   /      \        /      \
+  6       22      45      107
+ / \     /  \    /  \    /   \
+1   7   20  35  40  47  99   1001
+</code></pre>
+<p>发现是BST<br>
+（其实node的名字就是它的层数和位置）<br>
+下面仔细看fun7的代码</p>
+<pre><code>000000000040120a &lt;fun7&gt;:
+  40120a:       48 83 ec 08             sub    $0x8,%rsp
+  40120e:       48 85 ff                test   %rdi,%rdi
+  401211:       74 2b                   je     40123e &lt;fun7+0x34&gt;
+  
+  401213:       8b 17                   mov    (%rdi),%edx
+  401215:       39 f2                   cmp    %esi,%edx
+  401217:       7e 0d                   jle    401226 &lt;fun7+0x1c&gt;
+  
+  401219:       48 8b 7f 08             mov    0x8(%rdi),%rdi
+  40121d:       e8 e8 ff ff ff          callq  40120a &lt;fun7&gt;
+  
+  401222:       01 c0                   add    %eax,%eax
+  401224:       eb 1d                   jmp    401243 &lt;fun7+0x39&gt;
+  
+  401226:       b8 00 00 00 00          mov    $0x0,%eax
+  40122b:       39 f2                   cmp    %esi,%edx
+  40122d:       74 14                   je     401243 &lt;fun7+0x39&gt;
+  
+  40122f:       48 8b 7f 10             mov    0x10(%rdi),%rdi
+  401233:       e8 d2 ff ff ff          callq  40120a &lt;fun7&gt;
+  
+  401238:       8d 44 00 01             lea    0x1(%rax,%rax,1),%eax
+  40123c:       eb 05                   jmp    401243 &lt;fun7+0x39&gt;
+  
+  40123e:       b8 ff ff ff ff          mov    $0xffffffff,%eax
+  
+  401243:       48 83 c4 08             add    $0x8,%rsp
+  401247:       c3                      retq
+</code></pre>
+<p>是一个递归函数，递归访问的方法是改变<code>%rdi</code>，即正在操作的node指针，也是fun7的第一个参数<br>
+<code>0x8(%rdi)</code>是左儿子，<code>0x10(%rdi)</code>是右儿子<br>
+翻译成c语言：</p>
+<pre class=" language-c"><code class="prism  language-c"><span class="token keyword">int</span> <span class="token function">fun7</span><span class="token punctuation">(</span>node<span class="token operator">*</span> p<span class="token punctuation">,</span> <span class="token keyword">int</span> v<span class="token punctuation">)</span>  <span class="token punctuation">{</span>  
+	<span class="token keyword">if</span> <span class="token punctuation">(</span>p <span class="token operator">==</span> <span class="token constant">NULL</span><span class="token punctuation">)</span><span class="token keyword">return</span> <span class="token operator">-</span><span class="token number">1</span><span class="token punctuation">;</span>  
+	<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>v <span class="token operator">&lt;</span> p<span class="token operator">-&gt;</span>data<span class="token punctuation">)</span><span class="token keyword">return</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token function">fun7</span><span class="token punctuation">(</span>p<span class="token operator">-&gt;</span>left<span class="token punctuation">,</span> v<span class="token punctuation">)</span><span class="token punctuation">;</span>  
+	<span class="token keyword">else</span> <span class="token keyword">if</span> <span class="token punctuation">(</span>v <span class="token operator">==</span> p<span class="token operator">-&gt;</span>data<span class="token punctuation">)</span><span class="token keyword">return</span> <span class="token number">0</span><span class="token punctuation">;</span>  
+	<span class="token keyword">else</span> <span class="token keyword">return</span> <span class="token number">2</span> <span class="token operator">*</span> <span class="token function">fun7</span><span class="token punctuation">(</span>p<span class="token operator">-&gt;</span>right<span class="token punctuation">,</span> v<span class="token punctuation">)</span> <span class="token operator">+</span> <span class="token number">1</span><span class="token punctuation">;</span>  
+<span class="token punctuation">}</span>
+</code></pre>
+<p>调用时传入的节点是根节点，考虑如何凑出2</p>
+<p>想到一个三层的递归<br>
+<code>2*(2*(return 0)+1)</code>可以凑出2（因为只能考虑2*1=2）<br>
+即根节点先走left再走right到达一个value相等的节点</p>
+<p>即key为22，通过！</p>
+<p><strong>至此，满分无失误解除炸弹</strong></p>
+<p>结算画面：</p>
+<pre><code>22
+Wow! You've defused the secret stage!
+GET /csapp/?userid=2023302111097&amp;userpwd=6B6WSYiFBBJQ0sPmqJJw&amp;lab=whu24&amp;result=372514681%3AALFVHNNL4HIQ4%3Adefused%3A7%3A22&amp;submit=submit HTTP/1.0
+
+
+Congratulations! You've defused the bomb!
+Your instructor has been notified and will verify your solution.
+[Inferior 1 (process 782) exited normally]
+(gdb) 
+</code></pre>
+<h3 id="思考：-6">思考：</h3>
+<p>有了phase6处理指针变换的经验，secret_phase的难度略微下降（但只有一点）</p>
+<h2 id="实验总结">实验总结</h2>
+<p>整个流程走下来，已经能较为熟练使用gdb调试了，阅读汇编代码的能力也有明显的提高</p>
+<p>总耗时15h左右，应该算是比较慢的</p>
+<p>在phase4还原代码的递归结构和寻找secret_phase入口时得到了SkyZheng的帮助，在此感谢</p>
+</div>
+</body>
+
+</html>

@@ -1,0 +1,100 @@
+0000000000400f5b <phase_3>:
+  400f5b:       48 83 ec 18             sub    $0x18,%rsp
+  400f5f:       48 8d 4c 24 08          lea    0x8(%rsp),%rcx
+  400f64:       48 8d 54 24 0c          lea    0xc(%rsp),%rdx
+  400f69:       be 01 28 40 00          mov    $0x402801,%esi
+  400f6e:       b8 00 00 00 00          mov    $0x0,%eax
+  400f73:       e8 b8 fc ff ff          callq  400c30 <__isoc99_sscanf@plt> 
+  400f78:       83 f8 01                cmp    $0x1,%eax
+  400f7b:       7f 05                   jg     400f82 <phase_3+0x27>
+  400f7d:       e8 57 06 00 00          callq  4015d9 <explode_bomb>
+  400f82:       83 7c 24 0c 07          cmpl   $0x7,0xc(%rsp) 
+  400f87:       77 66                   ja     400fef <phase_3+0x94>
+  400f89:       8b 44 24 0c             mov    0xc(%rsp),%eax
+
+  400f8d:       ff 24 c5 90 25 40 00    jmpq   *0x402590(,%rax,8)
+  400f94:       b8 00 00 00 00          mov    $0x0,%eax
+  400f99:       eb 05                   jmp    400fa0 <phase_3+0x45>
+  400f9b:       b8 e8 02 00 00          mov    $0x2e8,%eax
+  400fa0:       2d 7a 01 00 00          sub    $0x17a,%eax 
+  400fa5:       eb 05                   jmp    400fac <phase_3+0x51>
+  400fa7:       b8 00 00 00 00          mov    $0x0,%eax
+  400fac:       05 46 02 00 00          add    $0x246,%eax
+  400fb1:       eb 05                   jmp    400fb8 <phase_3+0x5d>
+  400fb3:       b8 00 00 00 00          mov    $0x0,%eax
+  400fb8:       2d b9 02 00 00          sub    $0x2b9,%eax
+  400fbd:       eb 05                   jmp    400fc4 <phase_3+0x69>
+  400fbf:       b8 00 00 00 00          mov    $0x0,%eax
+  400fc4:       05 b9 02 00 00          add    $0x2b9,%eax
+  400fc9:       eb 05                   jmp    400fd0 <phase_3+0x75>
+  400fcb:       b8 00 00 00 00          mov    $0x0,%eax
+  400fd0:       2d b9 02 00 00          sub    $0x2b9,%eax
+  400fd5:       eb 05                   jmp    400fdc <phase_3+0x81>
+  400fd7:       b8 00 00 00 00          mov    $0x0,%eax
+  400fdc:       05 b9 02 00 00          add    $0x2b9,%eax
+  400fe1:       eb 05                   jmp    400fe8 <phase_3+0x8d>
+  400fe3:       b8 00 00 00 00          mov    $0x0,%eax
+  400fe8:       2d b9 02 00 00          sub    $0x2b9,%eax
+  400fed:       eb 0a                   jmp    400ff9 <phase_3+0x9e>
+  400fef:       e8 e5 05 00 00          callq  4015d9 <explode_bomb>
+  400ff4:       b8 00 00 00 00          mov    $0x0,%eax
+
+  400ff9:       83 7c 24 0c 05          cmpl   $0x5,0xc(%rsp)
+  400ffe:       7f 06                   jg     401006 <phase_3+0xab>
+  401000:       3b 44 24 08             cmp    0x8(%rsp),%eax
+  401004:       74 05                   je     40100b <phase_3+0xb0>
+  401006:       e8 ce 05 00 00          callq  4015d9 <explode_bomb>
+  40100b:       48 83 c4 18             add    $0x18,%rsp
+  40100f:       c3                      retq
+
+
+0000000000400f5b <phase_3>:
+  400f5b:       48 83 ec 18             sub    $0x18,%rsp            ; 分配 24 字节的栈空间
+  400f5f:       48 8d 4c 24 08          lea    0x8(%rsp),%rcx        ; 将 %rsp + 0x8 的地址加载到 %rcx
+  400f64:       48 8d 54 24 0c          lea    0xc(%rsp),%rdx        ; 将 %rsp + 0xc 的地址加载到 %rdx
+  400f69:       be 01 28 40 00          mov    $0x402801,%esi        ; 将地址 0x402801（一个字符串）加载到 %esi
+  400f6e:       b8 00 00 00 00          mov    $0x0,%eax             ; 将 0 加载到 %eax
+  400f73:       e8 b8 fc ff ff          callq  400c30 <__isoc99_sscanf@plt> ; 调用 sscanf 函数
+  400f78:       83 f8 01                cmp    $0x1,%eax             ; 检查 sscanf 的返回值是否大于 1
+  400f7b:       7f 05                   jg     400f82 <phase_3+0x27> ; 如果大于 1，则跳转到 0x400f82
+  400f7d:       e8 57 06 00 00          callq  4015d9 <explode_bomb> ; 否则触发炸弹
+  400f82:       83 7c 24 0c 07          cmpl   $0x7,0xc(%rsp)       ; 比较 %rsp + 0xc 处的值是否小于等于 7
+  400f87:       77 66                   ja     400fef <phase_3+0x94> ; 如果大于 7，则触发炸弹
+  400f89:       8b 44 24 0c             mov    0xc(%rsp),%eax        ; 将 %rsp + 0xc 处的值加载到 %eax
+  400f8d:       ff 24 c5 90 25 40 00    jmpq   *0x402590(,%rax,8)    ; 根据 %eax 的值进行间接跳转
+  ; 以下是根据 %eax 不同值执行的不同操作
+
+400f94:    b8 00 00 00 00          mov    $0x0,%eax             eax=0
+400f99:    eb 05                   jmp    400fa0 <phase_3+0x45>  跳0x400fa0
+400f9b:    b8 e8 02 00 00          mov    $0x2e8,%eax         eax=0x2e8
+400fa0:    2d 7a 01 00 00          sub    $0x17a,%eax          eax-0x17a
+400fa5:    eb 05                   jmp    400fac <phase_3+0x51> 跳0x400fac
+400fa7:    b8 00 00 00 00          mov    $0x0,%eax           eax=0
+400fac:    05 46 02 00 00          add    $0x246,%eax           eax+0x246
+400fb1:    eb 05                   jmp    400fb8 <phase_3+0x5d> 跳0x400fb8
+400fb3:    b8 00 00 00 00          mov    $0x0,%eax            eax=0
+400fb8:    2d b9 02 00 00          sub    $0x2b9,%eax          eax-0x2b9
+400fbd:    eb 05                   jmp    400fc4 <phase_3+0x69> 跳0x400fc4
+400fbf:    b8 00 00 00 00          mov    $0x0,%eax           eax=0
+400fc4:    05 b9 02 00 00          add    $0x2b9,%eax          eax+0x2b9
+400fc9:    eb 05                   jmp    400fd0 <phase_3+0x75>跳0x400fd0
+400fcb:    b8 00 00 00 00          mov    $0x0,%eax            eax=0
+400fd0:    2d b9 02 00 00          sub    $0x2b9,%eax          eax-0x2b9
+400fd5:    eb 05                   jmp    400fdc <phase_3+0x81> 跳0x400fdc
+400fd7:    b8 00 00 00 00          mov    $0x0,%eax          eax=0
+400fdc:    05 b9 02 00 00          add    $0x2b9,%eax          eax+0x2b9
+400fe1:    eb 05                   jmp    400fe8 <phase_3+0x8d> 跳0x400fe8
+400fe3:    b8 00 00 00 00          mov    $0x0,%eax          eax=0
+400fe8:    2d b9 02 00 00          sub    $0x2b9,%eax         eax-0x2b9
+400fed:    eb 0a                   jmp    400ff9 <phase_3+0x9e> 跳0x400ff9
+
+400fef:    e8 e5 05 00 00          callq  4015d9 <explode_bomb> ; 调用函数explode_bomb
+400ff4:    b8 00 00 00 00          mov    $0x0,%eax            ; 将0移动到eax寄存器中
+400ff9:    83 7c 24 0c 05          cmpl   $0x5,0xc(%rsp)      ; 比较0xc(%rsp)和0x5
+400ffe:    7f 06                   jg     401006 <phase_3+0xab> ; 如果大于则跳转到0x401006//boom
+401000:    3b 44 24 08             cmp    0x8(%rsp),%eax      ; 比较0x8(%rsp)和eax寄存器中的值
+401004:    74 05                   je     40100b <phase_3+0xb0> ; 如果相等则跳转到0x40100b
+401006:    e8 ce 05 00 00          callq  4015d9 <explode_bomb> ; 调用函数explode_bomb
+40100b:    48 83 c4 18             add    $0x18,%rsp           ; 栈指针增加0x18
+40100f:    c3                      retq                         ; 返回
+

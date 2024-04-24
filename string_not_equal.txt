@@ -1,0 +1,39 @@
+000000000040132e <strings_not_equal>:
+  40132e:       41 54                   push   %r12
+  401330:       55                      push   %rbp
+  401331:       53                      push   %rbx
+  401332:       48 89 fb                mov    %rdi,%rbx
+  401335:       48 89 f5                mov    %rsi,%rbp
+  401338:       e8 d4 ff ff ff          callq  401311 <string_length>
+  40133d:       41 89 c4                mov    %eax,%r12d
+  401340:       48 89 ef                mov    %rbp,%rdi
+  401343:       e8 c9 ff ff ff          callq  401311 <string_length>
+  401348:       ba 01 00 00 00          mov    $0x1,%edx
+  40134d:       41 39 c4                cmp    %eax,%r12d
+  401350:       75 3e                   jne    401390 <strings_not_equal+0x62>
+  401352:       0f b6 03                movzbl (%rbx),%eax
+  401355:       84 c0                   test   %al,%al
+  401357:       74 24                   je     40137d <strings_not_equal+0x4f>
+  401359:       3a 45 00                cmp    0x0(%rbp),%al
+  40135c:       74 09                   je     401367 <strings_not_equal+0x39>
+  40135e:       66 90                   xchg   %ax,%ax
+  401360:       eb 22                   jmp    401384 <strings_not_equal+0x56>
+  401362:       3a 45 00                cmp    0x0(%rbp),%al
+  401365:       75 24                   jne    40138b <strings_not_equal+0x5d>
+  401367:       48 83 c3 01             add    $0x1,%rbx
+  40136b:       48 83 c5 01             add    $0x1,%rbp
+  40136f:       0f b6 03                movzbl (%rbx),%eax
+  401372:       84 c0                   test   %al,%al
+  401374:       75 ec                   jne    401362 <strings_not_equal+0x34>
+  401376:       ba 00 00 00 00          mov    $0x0,%edx
+  40137b:       eb 13                   jmp    401390 <strings_not_equal+0x62>
+  40137d:       ba 00 00 00 00          mov    $0x0,%edx
+  401382:       eb 0c                   jmp    401390 <strings_not_equal+0x62>
+  401384:       ba 01 00 00 00          mov    $0x1,%edx
+  401389:       eb 05                   jmp    401390 <strings_not_equal+0x62>
+  40138b:       ba 01 00 00 00          mov    $0x1,%edx
+  401390:       89 d0                   mov    %edx,%eax
+  401392:       5b                      pop    %rbx
+  401393:       5d                      pop    %rbp
+  401394:       41 5c                   pop    %r12
+  401396:       c3                      retq
